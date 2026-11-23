@@ -112,8 +112,11 @@ def normalize_event(event: dict[str, Any]) -> dict[str, Any]:
         payload["status"] = "connected"
     elif event_type == "response.created":
         payload["status"] = "translating"
-        payload["response_id"] = event.get("response_id") or event.get("response", {}).get("id", "")
-    elif event_type in {
+          response = event.get("response")
+          if not isinstance(response, dict):
+              response = {}
+          payload["response_id"] = event.get("response_id") or response.get("id", "")
+      elif event_type in {
         "conversation.item.input_audio_transcription.delta",
         "conversation.item.input_audio_transcription.text",
     }:
@@ -148,8 +151,10 @@ def normalize_event(event: dict[str, Any]) -> dict[str, Any]:
             "item_id": event.get("item_id", ""),
         }
     elif event_type == "response.done":
-        response = event.get("response") or {}
-        response_id = response.get("id", "")
+          response = event.get("response")
+          if not isinstance(response, dict):
+              response = {}
+          response_id = response.get("id", "")
         response_status = str(response.get("status") or "completed")
         transcripts = []
         pairs = []
@@ -274,11 +279,11 @@ class LiveTranslateClient:
     async def finish(self) -> None:
         if self.upstream is None or self.finished:
             return
-        self.finished = True
         await self.upstream.send(
             json.dumps({"event_id": make_event_id("finish"), "type": "session.finish"})
         )
-
+        self.finished = True
+        
     async def close(self) -> None:
         if self.upstream is not None:
             upstream, self.upstream = self.upstream, None
