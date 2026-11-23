@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import urllib.parse
 from dataclasses import dataclass
 
 
@@ -29,9 +30,12 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
+        region = os.getenv("DASHSCOPE_REGION", "intl").strip().lower()
+        if region not in REGION_DOMAINS:
+            raise ValueError("Регион должен быть intl или mainland")
         return cls(
             api_key=api_key,
-            region=os.getenv("DASHSCOPE_REGION", "intl").strip().lower(),
+        region=region,    
             model=os.getenv("DASHSCOPE_MODEL", DEFAULT_MODEL).strip(),
             workspace_id=os.getenv("DASHSCOPE_WORKSPACE_ID", "").strip(),
             ws_url_override=os.getenv("DASHSCOPE_WS_URL", "").strip(),
@@ -46,6 +50,11 @@ class Settings:
     def ws_url(self) -> str:
         if self.ws_url_override:
             base = self.ws_url_override.split("?", 1)[0]
+            parsed = urllib.parse.urlparse(base)
+            if parsed.scheme != "wss" and not (
+                parsed.scheme == "ws" and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+            ):
+                raise ValueError("DASHSCOPE_WS_URL должен использовать wss://")
         elif self.workspace_id:
             if not _WORKSPACE_RE.fullmatch(self.workspace_id):
                 raise ValueError("DASHSCOPE_WORKSPACE_ID содержит недопустимые символы")
@@ -55,7 +64,7 @@ class Settings:
             )
         else:
             base = LEGACY_ENDPOINTS[self.region]
-        return f"{base}?model={self.model}"
+        return f"{base}?model={urllib.parse.quote(self.model, safe='')}"
 
     def update_runtime(
         self,
@@ -64,19 +73,26 @@ class Settings:
         region: str | None = None,
         workspace_id: str | None = None,
     ) -> None:
-        if api_key.strip():
-            self.api_key = api_key.strip()
-            self.key_source = "runtime"
+   
+        normalized_api_key = api_key.strip()
+        normalized_region: str | None = None
         if region is not None:
-            if region not in REGION_DOMAINS:
+            normalized_region = region.strip().lower()
+            if normalized_region not in REGION_DOMAINS:
                 raise ValueError("Регион должен быть intl или mainland")
-            self.region = region
+        normalized_workspace_id: str | None = None
         if workspace_id is not None:
-            workspace_id = workspace_id.strip()
-            if workspace_id and not _WORKSPACE_RE.fullmatch(workspace_id):
+            normalized_workspace_id = workspace_id.strip()
+            if normalized_workspace_id and not _WORKSPACE_RE.fullmatch(normalized_workspace_id):
                 raise ValueError("Некорректный Workspace ID")
-            self.workspace_id = workspace_id
 
+        if normalized_api_key:
+            self.api_key = normalized_api_key
+            self.key_source = "runtime"
+        if normalized_region is not None:
+            self.region = normalized_region
+        if normalized_workspace_id is not None:
+            self.workspace_id = normalized_workspace_id
     def public_dict(self) -> dict[str, object]:
         return {
             "configured": self.configured,
