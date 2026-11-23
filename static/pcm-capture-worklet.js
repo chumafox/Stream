@@ -1,7 +1,7 @@
 class PcmCaptureProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    const config = options.processorOptions || {};
+    const config = (options && options.processorOptions) || {};
     this.targetRate = config.targetSampleRate || 16000;
     this.frameSamples = config.frameSamples || 1600;
     this.ratio = sampleRate / this.targetRate;
