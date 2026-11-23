@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1017">
+  <title>StreamBridge — русская речь в китайскую</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">RU → 中</span>
+      <div>
+        <strong>StreamBridge</strong>
+        <span>голосовой мост для стрима</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span id="status-pill" class="status-pill" data-state="idle">
+        <span class="status-dot"></span><span id="status-text">Остановлено</span>
+      </span>
+      <button id="settings-button" class="button button-ghost" type="button">Настройки API</button>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <section id="setup-banner" class="setup-banner" hidden>
+      <div>
+        <strong>Нужен ключ Alibaba Cloud Model Studio</strong>
+        <p>Ключ хранится только в памяти локального сервера. Для постоянной настройки используйте файл <code>.env</code>.</p>
+      </div>
+      <button id="setup-button" class="button button-primary" type="button">Подключить API</button>
+    </section>
+
+    <div class="workspace-grid">
+      <section class="panel control-panel" aria-labelledby="control-title">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">ПУЛЬТ СТРИМЕРА</span>
+            <h1 id="control-title">Говорите по-русски.<br><span>В эфир уходит китайский.</span></h1>
+          </div>
+        </div>
+
+        <div class="route-diagram" aria-label="Маршрут звука">
+          <div><span>01</span><strong>Микрофон</strong><small>русская речь</small></div>
+          <i>→</i>
+          <div><span>02</span><strong>Qwen 3.8</strong><small>перевод + голос</small></div>
+          <i>→</i>
+          <div><span>03</span><strong>OBS</strong><small>китайская речь</small></div>
+        </div>
+
+        <div class="field-grid">
+          <label class="field field-wide">
+            <span>Микрофон</span>
+            <select id="microphone-select"></select>
+          </label>
+          <label class="field field-wide">
+            <span>Куда отправить китайскую речь</span>
+            <select id="output-select"></select>
+            <small>Выберите <b>CABLE Input (VB-Audio Virtual Cable)</b></small>
+          </label>
+        </div>
+        <button id="refresh-devices" class="text-button" type="button">Обновить список устройств</button>
+        <p id="output-support" class="inline-message" hidden></p>
+
+        <div class="meters">
+          <div class="meter-row">
+            <div class="meter-label"><span>Русский вход</span><output id="mic-db">−∞ dB</output></div>
+            <div class="meter-track"><div id="mic-meter" class="meter-fill meter-input"></div></div>
+          </div>
+          <div class="meter-row">
+            <div class="meter-label"><span>Китайский выход</span><output id="output-db">−∞ dB</output></div>
+            <div class="meter-track"><div id="output-meter" class="meter-fill meter-output"></div></div>
+          </div>
+        </div>
+
+        <div class="transport">
+          <button id="start-button" class="start-button" type="button">
+            <span class="start-icon" aria-hidden="true"></span>
+            <span id="start-label">Начать перевод</span>
+          </button>
+          <p id="transport-hint">Разрешите доступ к микрофону. Исходный русский звук в OBS не отправляется.</p>
+        </div>
+
+        <div class="session-stats">
+          <div><span>Сеанс</span><strong id="duration-value">00:00</strong></div>
+          <div><span>Буфер выхода</span><strong id="buffer-value">0 мс</strong></div>
+          <div><span>Токены</span><strong id="tokens-value">—</strong></div>
+        </div>
+        <p id="error-message" class="error-message" role="alert" hidden></p>
+      </section>
+
+      <section class="panel transcript-panel" aria-labelledby="transcript-title">
+        <div class="transcript-header">
+          <div>
+            <span class="eyebrow">КОНТРОЛЬ ПЕРЕВОДА</span>
+            <h2 id="transcript-title">Расшифровка</h2>
+          </div>
+          <button id="clear-transcript" class="text-button" type="button">Очистить</button>
+        </div>
+        <div class="language-labels"><span>RU · что вы сказали</span><span>中文 · что услышит зритель</span></div>
+        <div id="transcript" class="transcript-list">
+          <div id="transcript-empty" class="empty-state">
+            <span aria-hidden="true">「</span>
+            <p>Здесь появятся русская речь и китайский перевод.</p>
+            <small>Проверяйте имена и игровые термины перед эфиром.</small>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel advanced-panel">
+      <details open>
+        <summary>Параметры голоса и микрофона</summary>
+        <div class="advanced-grid">
+          <label class="field">
+            <span>Сохранение тембра</span>
+            <select id="clone-mode">
+              <option value="once">Один говорящий — клонировать один раз</option>
+              <option value="always">Несколько говорящих — отслеживать голос</option>
+              <option value="off">Без клонирования — стандартный голос Tina</option>
+            </select>
+            <small>Для сольного стрима рекомендуется первый вариант.</small>
+          </label>
+          <label class="field">
+            <span>Громкость китайского канала <output id="volume-value">100%</output></span>
+            <input id="volume-slider" type="range" min="0" max="200" value="100" step="5">
+          </label>
+          <label class="field field-wide">
+            <span>Словарь стрима <small>(необязательно, до 100 строк)</small></span>
+            <textarea id="glossary-input" rows="3" placeholder="ник стримера=主播昵称&#10;название игры=游戏名称"></textarea>
+            <small>Формат: <code>русский термин=中文翻译</code>, один термин на строку.</small>
+          </label>
+          <fieldset class="check-group">
+            <legend>Обработка микрофона</legend>
+            <label><input id="echo-cancellation" type="checkbox" checked> Эхоподавление</label>
+            <label><input id="noise-suppression" type="checkbox" checked> Шумоподавление</label>
+            <label><input id="auto-gain" type="checkbox" checked> Автогромкость</label>
+          </fieldset>
+        </div>
+      </details>
+    </section>
+
+    <section class="obs-guide panel">
+      <div>
+        <span class="eyebrow">ПОДКЛЮЧЕНИЕ К OBS · ОДИН РАЗ</span>
+        <h2>Маршрут звука без дублирования микрофона</h2>
+      </div>
+      <ol>
+        <li><span>1</span><div><strong>Установите VB-CABLE</strong><p>После установки перезапустите браузер и OBS. В списке выхода выберите <code>CABLE Input</code>.</p></div></li>
+        <li><span>2</span><div><strong>Добавьте источник в OBS</strong><p>Источники → <b>Захват входного аудиопотока</b> → устройство <code>CABLE Output</code>.</p></div></li>
+        <li><span>3</span><div><strong>Отключите русский микрофон в микшере</strong><p>Если в эфире должна быть только китайская речь, выключите дорожку исходного микрофона. Оставьте её только для общения с русскими зрителями при необходимости.</p></div></li>
+      </ol>
+      <p class="latency-note">Это последовательный перевод с небольшой задержкой, а не синхронный дубляж. Делайте короткие фразы и паузы между ними.</p>
+    </section>
+  </main>
+
+  <dialog id="settings-dialog" class="settings-dialog">
+    <form id="settings-form">
+      <div class="dialog-heading">
+        <div><span class="eyebrow">ALIBABA CLOUD</span><h2>Подключение LiveTranslate</h2></div>
+        <button id="close-settings" class="icon-button" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <label class="field">
+        <span>DashScope API key</span>
+        <input id="api-key-input" type="password" autocomplete="off" placeholder="sk-...">
+        <small id="key-help">Не сохраняется в браузере. До перезапуска сервиса ключ хранится только в его памяти.</small>
+      </label>
+      <label class="field">
+        <span>Регион ключа</span>
+        <select id="region-select">
+          <option value="intl">Международный · Сингапур</option>
+          <option value="mainland">Материковый Китай · Пекин</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Workspace ID <small>(если требуется вашим аккаунтом)</small></span>
+        <input id="workspace-input" type="text" autocomplete="off" placeholder="Например: llm-xxx">
+        <small>Если поле заполнено, используется выделенный endpoint вашего Workspace.</small>
+      </label>
+      <div class="model-note"><span>Модель</span><code id="model-name">qwen3.8-livetranslate-flash-realtime</code></div>
+      <p id="settings-message" class="inline-message" hidden></p>
+      <div class="dialog-actions">
+        <button id="check-connection" class="button button-ghost" type="button">Сохранить и проверить</button>
+        <button class="button button-primary" type="submit">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <template id="transcript-entry-template">
+    <article class="transcript-entry">
+      <div class="source-text"></div>
+      <div class="target-text" lang="zh-CN"></div>
+    </article>
+  </template>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
