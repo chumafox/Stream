@@ -12,8 +12,17 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
     this.levelSum = 0;
     this.levelPeak = 0;
     this.active = true;
+    this.prevSample = 0;
     this.port.onmessage = (event) => {
-      if (event.data.type === "stop") this.active = false;
+      if (event.data && event.data.type === "stop") {
+        if (this.frameOffset > 0) {
+          const tail = this.frame.slice(0, this.frameOffset);
+          this.port.postMessage({ type: "audio", buffer: tail.buffer }, [tail.buffer]);
+          this.frame = new Int16Array(this.framesSamples);
+          this.frameOffset = 0;
+        }
+        this.active = false;
+      }
     };
   }
 
@@ -43,15 +52,16 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
     }
     this.levelCount += input.length;
 
-    while (this.position < input.length) {
+    while (this.position < input.length - 1) {
       const index = Math.floor(this.position);
       const fraction = this.position - index;
-      const current = input[index];
+      const current = index < 0 ? this.prevSample : input[index];
       const next = index + 1 < input.length ? input[index + 1] : current;
       this.pushSample(current + (next - current) * fraction);
       this.position += this.ratio;
     }
     this.position -= input.length;
+    this.prevSample = input[input.length - 1];
 
     if (this.levelCount >= sampleRate / 10) {
       this.port.postMessage({
