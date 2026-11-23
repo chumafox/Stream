@@ -132,7 +132,7 @@ for (const rate of [48000, 44100]) {
 // 7. Остановка capture-worklet сбрасывает хвостовой буфер.
 {
   const registry = loadWorklet("static/pcm-capture-worklet.js", 16000);
-  const proc = new registry["pcm-capture-processor"]();
+  const proc = new registry["pcm-capture-processor"]({ processorOptions: {} });
   const input = new Float32Array(128).fill(0.5);
   proc.process([[input]], []);
   assert.equal(proc.port.sent.length, 0, "неполный кадр не должен отправляться до stop");
