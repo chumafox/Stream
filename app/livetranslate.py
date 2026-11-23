@@ -4,12 +4,17 @@ import asyncio
 import base64
 import json
 import re
+import ssl
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 import websockets
+try:
+    import certifi
+except ImportError:
+    certifi = None  # type: ignore[assignment]    
 
 from app.config import Settings
 
@@ -206,6 +211,9 @@ class LiveTranslateClient:
         if not self.settings.api_key:
             raise LiveTranslateError("Сначала укажите DashScope API key в настройках")
         try:
+            extra_ssl: dict[str, Any] = {}
+            if self.settings.ws_url.startswith("wss://") and certifi is not None:
+                extra_ssl["ssl"] = ssl.create_default_context(cafile=certifi.where())
             self.upstream = await websockets.connect(
                 self.settings.ws_url,
                 additional_headers={"Authorization": f"Bearer {self.settings.api_key}"},
@@ -214,6 +222,7 @@ class LiveTranslateClient:
                 ping_interval=20,
                 ping_timeout=20,
                 max_size=4 * 1024 * 1024,
+                **extra_ssl,
             )
             await self._wait_for("session.created")
             await self.upstream.send(
