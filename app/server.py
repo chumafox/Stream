@@ -168,7 +168,18 @@ async def translate_socket(websocket: WebSocket) -> None:
     ready = False
 
     try:
-        raw_config = await asyncio.wait_for(websocket.receive_text(), timeout=15)
+        try:
+            raw_config = await asyncio.wait_for(websocket.receive_text(), timeout=15)
+        except TimeoutError:
+            await safe_send(
+                websocket,
+                {
+                    "type": "server_error",
+                    "message": "Браузер не прислал настройки сессии за 15 секунд",
+                    "recoverable": False,
+                },
+            )
+            return
         config = ClientConfig.model_validate_json(raw_config)
         if config.type != "config":
             raise ValueError("Первое сообщение должно иметь type=config")
@@ -216,7 +227,7 @@ async def translate_socket(websocket: WebSocket) -> None:
                     control = json.loads(text)
                 except json.JSONDecodeError:
                     continue
-                if control.get("type") == "finish":
+                if isinstance(control, dict) and control.get("type") == "finish":
                     await client.finish()
                     return True
 
@@ -263,15 +274,6 @@ async def translate_socket(websocket: WebSocket) -> None:
             browser_task.cancel()
     except WebSocketDisconnect:
         pass
-    except TimeoutError:
-        await safe_send(
-            websocket,
-            {
-                "type": "server_error",
-                "message": "Браузер не прислал настройки сессии за 15 секунд",
-                "recoverable": False,
-            },
-        )
     except (ValueError, json.JSONDecodeError) as exc:
         await safe_send(
             websocket, {"type": "server_error", "message": str(exc), "recoverable": False}

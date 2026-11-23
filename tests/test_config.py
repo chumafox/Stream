@@ -1,3 +1,5 @@
+import pytest
+
 from app.config import DEFAULT_MODEL, Settings
 
 
@@ -39,3 +41,30 @@ def test_public_config_never_exposes_key():
     assert public["configured"] is True
     assert "secret" not in repr(public)
     assert "api_key" not in public
+
+def test_from_env_rejects_unknown_region(monkeypatch):
+    monkeypatch.setenv("DASHSCOPE_REGION", "unknown-region")
+    with pytest.raises(ValueError):
+        Settings.from_env()
+
+
+def test_ws_url_override_rejects_remote_ws_and_allows_loopback():
+    with pytest.raises(ValueError):
+        Settings(api_key="secret", ws_url_override="ws://example.com/ws")
+
+    settings = Settings(api_key="secret", ws_url_override="ws://127.0.0.1:8765/ws")
+    assert settings.ws_url == f"ws://127.0.0.1:8765/ws?model={DEFAULT_MODEL}"
+
+
+def test_runtime_update_does_not_change_api_key_on_validation_error():
+    settings = Settings(api_key="secret", region="intl", key_source="env")
+
+    with pytest.raises(ValueError):
+        settings.update_runtime(api_key="new-secret", region="invalid-region")
+    assert settings.api_key == "secret"
+    assert settings.key_source == "env"
+
+    with pytest.raises(ValueError):
+        settings.update_runtime(api_key="new-secret", workspace_id="invalid workspace!")
+    assert settings.api_key == "secret"
+    assert settings.key_source == "env"

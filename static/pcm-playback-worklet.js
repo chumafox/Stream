@@ -102,7 +102,7 @@ class PcmPlaybackProcessor extends AudioWorkletProcessor {
       this.levelCount += produced;
       if (this.count === 0) {
         this.started = false;
-        this.underruns += 1;
+        if (!this.draining) this.underruns += 1;
         if (this.draining) {
           this.draining = false;
           this.postStatus();

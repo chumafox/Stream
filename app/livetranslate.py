@@ -4,12 +4,17 @@ import asyncio
 import base64
 import json
 import re
+import ssl
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 import websockets
+try:
+    import certifi
+except ImportError:
+    certifi = None  # type: ignore[assignment]    
 
 from app.config import Settings
 
@@ -112,7 +117,10 @@ def normalize_event(event: dict[str, Any]) -> dict[str, Any]:
         payload["status"] = "connected"
     elif event_type == "response.created":
         payload["status"] = "translating"
-        payload["response_id"] = event.get("response_id") or event.get("response", {}).get("id", "")
+        response = event.get("response")
+        if not isinstance(response, dict):
+            response = {}
+        payload["response_id"] = event.get("response_id") or response.get("id", "")
     elif event_type in {
         "conversation.item.input_audio_transcription.delta",
         "conversation.item.input_audio_transcription.text",
@@ -148,7 +156,9 @@ def normalize_event(event: dict[str, Any]) -> dict[str, Any]:
             "item_id": event.get("item_id", ""),
         }
     elif event_type == "response.done":
-        response = event.get("response") or {}
+        response = event.get("response")
+        if not isinstance(response, dict):
+            response = {}
         response_id = response.get("id", "")
         response_status = str(response.get("status") or "completed")
         transcripts = []
@@ -201,6 +211,9 @@ class LiveTranslateClient:
         if not self.settings.api_key:
             raise LiveTranslateError("Сначала укажите DashScope API key в настройках")
         try:
+            extra_ssl: dict[str, Any] = {}
+            if self.settings.ws_url.startswith("wss://") and certifi is not None:
+                extra_ssl["ssl"] = ssl.create_default_context(cafile=certifi.where())
             self.upstream = await websockets.connect(
                 self.settings.ws_url,
                 additional_headers={"Authorization": f"Bearer {self.settings.api_key}"},
@@ -209,6 +222,7 @@ class LiveTranslateClient:
                 ping_interval=20,
                 ping_timeout=20,
                 max_size=4 * 1024 * 1024,
+                **extra_ssl,
             )
             await self._wait_for("session.created")
             await self.upstream.send(
@@ -274,11 +288,11 @@ class LiveTranslateClient:
     async def finish(self) -> None:
         if self.upstream is None or self.finished:
             return
-        self.finished = True
         await self.upstream.send(
             json.dumps({"event_id": make_event_id("finish"), "type": "session.finish"})
         )
-
+        self.finished = True
+        
     async def close(self) -> None:
         if self.upstream is not None:
             upstream, self.upstream = self.upstream, None

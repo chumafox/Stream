@@ -117,5 +117,32 @@ for (const rate of [48000, 44100]) {
   }
   assert.equal(proc.count, 0);
 }
+// 6. Штатный drain не увеличивает счётчик underruns.
+{
+  const registry = loadWorklet("static/pcm-playback-worklet.js", 24000);
+  const proc = new registry["pcm-playback-processor"]({ processorOptions: { sampleRate: 24000 } });
+  const chunk = new Int16Array(4800).fill(1000);
+  proc.write(chunk.buffer);
+  proc.port.onmessage({ data: { type: "drain" } });
+  for (let i = 0; i < 60; i += 1) proc.process([], outputBlock());
+  assert.equal(proc.underruns, 0, `штатный drain не должен увеличивать underruns: ${proc.underruns}`);
+  assert.ok(proc.port.sent.some((message) => message.type === "drained"), "нет события drained");
+}
+
+// 7. Остановка capture-worklet сбрасывает хвостовой буфер.
+{
+  const registry = loadWorklet("static/pcm-capture-worklet.js", 16000);
+  const proc = new registry["pcm-capture-processor"]({ processorOptions: {} });
+  const input = new Float32Array(128).fill(0.5);
+  proc.process([[input]], []);
+  assert.equal(proc.port.sent.length, 0, "неполный кадр не должен отправляться до stop");
+  proc.port.onmessage({ data: { type: "stop" } });
+  const audioMsgs = proc.port.sent.filter((message) => message.type === "audio");
+  assert.equal(audioMsgs.length, 1, "хвостовой буфер должен отправляться при stop");
+  assert.equal(audioMsgs[0].buffer.byteLength, 128 * 2);
+  assert.equal(proc.frameOffset, 0);
+  assert.equal(proc.active, false);
+  assert.equal(proc.process([[input]], []), false);
+}
 
 console.log("audio worklet tests: ok");

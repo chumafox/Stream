@@ -3,16 +3,17 @@ setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
 
-where py >nul 2>nul
-if errorlevel 1 (
-    echo Python 3.11+ не найден. Установите Python с https://python.org и включите Add to PATH.
-    pause
-    exit /b 1
+set "PY_CMD="
+py -3 -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>nul
+if not errorlevel 1 (
+    set "PY_CMD=py -3"
+) else (
+    python -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>nul
+    if not errorlevel 1 set "PY_CMD=python"
 )
 
-py -3.11 -c "import sys" >nul 2>nul
-if errorlevel 1 (
-    echo Нужен именно Python 3.11 или новее: на 3.9/3.10 не работают тайм-ауты asyncio этого проекта.
+if "%PY_CMD%"=="" (
+    echo Нужен Python 3.11 или новее: на 3.9/3.10 не работают тайм-ауты asyncio этого приложения.
     echo Установите Python 3.11+ с https://python.org и запустите start.bat снова.
     pause
     exit /b 1
@@ -20,7 +21,7 @@ if errorlevel 1 (
 
 if not exist ".venv\Scripts\python.exe" (
     echo Создаём локальное окружение Python...
-    py -3.11 -m venv .venv
+ %PY_CMD% -m venv .venv
     if errorlevel 1 goto :error
 )
 
