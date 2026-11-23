@@ -92,12 +92,13 @@ h2 { font-size: 21px; margin-bottom: 0; }
 .start-icon { width: 11px; height: 11px; background: currentColor; border-radius: 50%; }
 .start-button[data-running="true"] .start-icon { border-radius: 2px; }
 #transport-hint { color: var(--muted); font-size: 11px; margin: 10px auto 0; max-width: 440px; line-height: 1.5; }
-.session-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.session-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
 .session-stats > div { border: 1px solid var(--line); background: #0c131b; border-radius: 10px; padding: 10px; }
 .session-stats span, .session-stats strong { display: block; }
 .session-stats span { color: var(--muted); font-size: 10px; margin-bottom: 5px; }
 .session-stats strong { font: 13px monospace; }
 .error-message { margin: 16px 0 0; padding: 12px; color: #ffd0d0; background: #351a20; border: 1px solid #65313d; border-radius: 10px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.error-message[data-kind="warning"] { color: #ffe7b8; background: #2f2712; border-color: #6b5624; }
 
 .transcript-panel { display: flex; flex-direction: column; }
 .transcript-header { display: flex; align-items: start; justify-content: space-between; gap: 12px; padding-bottom: 20px; }

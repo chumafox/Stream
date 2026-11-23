@@ -86,6 +86,7 @@
         <div class="session-stats">
           <div><span>Сеанс</span><strong id="duration-value">00:00</strong></div>
           <div><span>Буфер выхода</span><strong id="buffer-value">0 мс</strong></div>
+          <div><span>Сбои · вытеснено</span><strong id="drops-value">0 · 0 мс</strong></div>
           <div><span>Токены</span><strong id="tokens-value">—</strong></div>
         </div>
         <p id="error-message" class="error-message" role="alert" hidden></p>
@@ -119,9 +120,15 @@
             <select id="clone-mode">
               <option value="once">Один говорящий — клонировать один раз</option>
               <option value="always">Несколько говорящих — отслеживать голос</option>
+              <option value="never">Заранее созданный тембр (voice ID)</option>
               <option value="off">Без клонирования — стандартный голос Tina</option>
             </select>
             <small>Для сольного стрима рекомендуется первый вариант.</small>
+          </label>
+          <label class="field" id="voice-id-field" hidden>
+            <span>Voice ID</span>
+            <input id="voice-id-input" type="text" autocomplete="off" placeholder="qwen-translate-vc-...">
+            <small>Создаётся через Voice Cloning API с target_model текущей модели; даёт одинаковый тембр между эфирами.</small>
           </label>
           <label class="field">
             <span>Громкость китайского канала <output id="volume-value">100%</output></span>

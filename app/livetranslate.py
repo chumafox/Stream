@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -16,6 +17,7 @@ from app.config import Settings
 INPUT_SAMPLE_RATE = 16000
 OUTPUT_SAMPLE_RATE = 24000
 MAX_AUDIO_FRAME_BYTES = 64_000
+VOICE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{3,127}$")
 
 
 class LiveTranslateError(RuntimeError):
@@ -27,12 +29,20 @@ class SessionOptions:
     target_language: str = "zh"
     voice_clone_mode: str = "once"
     phrases: dict[str, str] = field(default_factory=dict)
+    voice_id: str = ""
 
     def validate(self) -> None:
         if self.target_language != "zh":
             raise ValueError("Эта сборка настроена на китайский язык результата: zh")
-        if self.voice_clone_mode not in {"once", "always", "off"}:
-            raise ValueError("voice_clone_mode должен быть once, always или off")
+        if self.voice_clone_mode not in {"once", "always", "never", "off"}:
+            raise ValueError("voice_clone_mode должен быть once, always, never или off")
+        self.voice_id = self.voice_id.strip()
+        if self.voice_clone_mode == "never":
+            if not VOICE_ID_RE.fullmatch(self.voice_id):
+                raise ValueError(
+                    "Для режима never нужен voice ID, созданный через Voice Cloning API "
+                    "с target_model текущей модели перевода"
+                )
         if len(self.phrases) > 100:
             raise ValueError("Можно передать не более 100 терминов за сеанс")
         for source, target in self.phrases.items():
@@ -44,7 +54,9 @@ class SessionOptions:
 
 def build_session(options: SessionOptions) -> dict[str, Any]:
     options.validate()
-    voice = "default" if options.voice_clone_mode != "off" else "Tina"
+    voice = "Tina" if options.voice_clone_mode == "off" else "default"
+    if options.voice_clone_mode == "never":
+        voice = options.voice_id
     translation: dict[str, Any] = {"language": options.target_language}
     if options.phrases:
         translation["corpus"] = {"phrases": options.phrases}
@@ -90,6 +102,11 @@ def normalize_event(event: dict[str, Any]) -> dict[str, Any]:
         "event_type": event_type,
         "event_id": event.get("event_id", ""),
     }
+    # item_id связывает субтитры по документированной схеме Qwen:
+    # translation_item.previous_item_id == asr_item.id.
+    for key in ("item_id", "previous_item_id", "speaker_id"):
+        if event.get(key) is not None:
+            payload[key] = event[key]
 
     if event_type in {"session.created", "session.updated"}:
         payload["status"] = "connected"
@@ -128,12 +145,19 @@ def normalize_event(event: dict[str, Any]) -> dict[str, Any]:
             "audio": audio,
             "sample_rate": OUTPUT_SAMPLE_RATE,
             "response_id": event.get("response_id", ""),
+            "item_id": event.get("item_id", ""),
         }
     elif event_type == "response.done":
         response = event.get("response") or {}
         response_id = response.get("id", "")
+        response_status = str(response.get("status") or "completed")
         transcripts = []
+        pairs = []
         for item in response.get("output") or []:
+            if item.get("id") and item.get("previous_item_id"):
+                pairs.append(
+                    {"item_id": item["id"], "previous_item_id": item["previous_item_id"]}
+                )
             for content in item.get("content") or []:
                 transcript = content.get("transcript")
                 if transcript:
@@ -142,8 +166,17 @@ def normalize_event(event: dict[str, Any]) -> dict[str, Any]:
             status="listening",
             response_id=response_id,
             response_done=True,
+            response_status=response_status,
             usage=response.get("usage"),
         )
+        if response_status not in {"completed", "in_progress"}:
+            details = response.get("status_details") or {}
+            reason = (details.get("error") or {}).get("message") or details.get("reason") or ""
+            payload["response_error"] = (
+                f"Модель завершила ответ со статусом {response_status}. {reason}".strip()
+            )
+        if pairs:
+            payload["pairs"] = pairs
         if transcripts:
             payload["translation_final"] = "".join(transcripts)
     elif event_type == "session.finished":

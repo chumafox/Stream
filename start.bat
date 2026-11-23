@@ -10,9 +10,17 @@ if errorlevel 1 (
     exit /b 1
 )
 
+py -3.11 -c "import sys" >nul 2>nul
+if errorlevel 1 (
+    echo Нужен именно Python 3.11 или новее: на 3.9/3.10 не работают тайм-ауты asyncio этого проекта.
+    echo Установите Python 3.11+ с https://python.org и запустите start.bat снова.
+    pause
+    exit /b 1
+)
+
 if not exist ".venv\Scripts\python.exe" (
     echo Создаём локальное окружение Python...
-    py -3 -m venv .venv
+    py -3.11 -m venv .venv
     if errorlevel 1 goto :error
 )
 

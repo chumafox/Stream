@@ -93,4 +93,32 @@ def test_invalid_client_config_is_reported(monkeypatch):
         socket.send_json({"type": "wrong"})
         response = socket.receive_json()
         assert response["type"] == "server_error"
+        assert response["recoverable"] is False
         assert "type=config" in response["message"]
+
+
+def test_prepared_voice_id_is_passed_to_session(monkeypatch):
+    captured = {}
+
+    class CapturingClient(FakeLiveTranslateClient):
+        def __init__(self, settings, options, on_event):
+            captured["options"] = options
+            super().__init__(settings, options, on_event)
+
+    monkeypatch.setattr(server, "LiveTranslateClient", CapturingClient)
+    monkeypatch.setattr(server.settings, "api_key", "test-key")
+    client = TestClient(server.app)
+    with client.websocket_connect("/ws/translate") as socket:
+        socket.send_json(
+            {
+                "type": "config",
+                "voice_clone_mode": "never",
+                "voice_id": "qwen-translate-vc-abc-def-ghi",
+                "phrases": {},
+            }
+        )
+        assert socket.receive_json()["type"] == "server_ready"
+        socket.send_json({"type": "finish"})
+        assert socket.receive_json()["type"] == "server_finished"
+    assert captured["options"].voice_clone_mode == "never"
+    assert captured["options"].voice_id == "qwen-translate-vc-abc-def-ghi"

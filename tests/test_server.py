@@ -51,3 +51,24 @@ def test_invalid_workspace_is_reported():
 def test_external_host_is_rejected():
     response = client.get("/", headers={"host": "example.com"})
     assert response.status_code == 400
+
+
+def test_cross_origin_config_is_rejected():
+    response = client.post(
+        "/api/config",
+        json={"api_key": "temporary", "region": "intl", "workspace_id": ""},
+        headers={"origin": "https://evil.example"},
+    )
+    assert response.status_code == 403
+    response = client.post("/api/config/check", headers={"origin": "https://evil.example"})
+    assert response.status_code == 403
+
+
+def test_local_origin_is_allowed():
+    response = client.post(
+        "/api/config",
+        json={"api_key": "temporary", "region": "intl", "workspace_id": ""},
+        headers={"origin": "http://127.0.0.1:8765"},
+    )
+    assert response.status_code == 200
+    assert response.json()["ok"] is True

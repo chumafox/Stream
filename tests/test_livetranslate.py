@@ -40,23 +40,81 @@ def test_standard_voice_does_not_enable_cloning():
     assert "voice_clone_options" not in session
 
 
-@pytest.mark.parametrize("mode", ["never", "auto", "", None])
+@pytest.mark.parametrize("mode", ["auto", "", None, "never"])
 def test_invalid_clone_mode_is_rejected(mode):
     with pytest.raises(ValueError):
         build_session(SessionOptions(voice_clone_mode=mode))
 
 
+def test_prepared_voice_id_uses_frequency_never():
+    session = build_session(
+        SessionOptions(voice_clone_mode="never", voice_id="qwen-translate-vc-abc-def-ghi")
+    )
+    assert session["audio"]["output"]["voice"] == "qwen-translate-vc-abc-def-ghi"
+    assert session["enable_voice_clone"] is True
+    assert session["voice_clone_options"] == {"frequency": "never"}
+
+
+def test_prepared_voice_requires_valid_id():
+    with pytest.raises(ValueError):
+        build_session(SessionOptions(voice_clone_mode="never", voice_id="bad/id"))
+
+
 def test_audio_event_is_forwarded_without_reencoding():
     audio = base64.b64encode(b"\x01\x00\xff\xff").decode()
     event = normalize_event(
-        {"type": "response.audio.delta", "delta": audio, "response_id": "resp-1"}
+        {
+            "type": "response.audio.delta",
+            "delta": audio,
+            "response_id": "resp-1",
+            "item_id": "item-tr-1",
+        }
     )
     assert event == {
         "type": "model_audio",
         "audio": audio,
         "sample_rate": 24000,
         "response_id": "resp-1",
+        "item_id": "item-tr-1",
     }
+
+
+def test_failed_response_is_reported_without_stopping_session():
+    result = normalize_event(
+        {
+            "type": "response.done",
+            "response": {
+                "id": "resp-1",
+                "status": "failed",
+                "status_details": {"error": {"message": "upstream overloaded"}},
+            },
+        }
+    )
+    assert result["status"] == "listening"
+    assert result["response_status"] == "failed"
+    assert "failed" in result["response_error"]
+    assert "upstream overloaded" in result["response_error"]
+
+
+def test_translation_pairs_follow_previous_item_id():
+    result = normalize_event(
+        {
+            "type": "response.done",
+            "response": {
+                "id": "resp-1",
+                "status": "completed",
+                "output": [
+                    {
+                        "id": "item-tr-1",
+                        "previous_item_id": "item-asr-1",
+                        "content": [{"transcript": "你好"}],
+                    }
+                ],
+            },
+        }
+    )
+    assert result["pairs"] == [{"item_id": "item-tr-1", "previous_item_id": "item-asr-1"}]
+    assert result["translation_final"] == "你好"
 
 
 def test_qwen38_transcript_events():

@@ -10,9 +10,11 @@ class PcmPlaybackProcessor extends AudioWorkletProcessor {
     this.count = 0;
     this.prebuffer = Math.floor(this.sampleRate * 0.12);
     this.started = false;
+    this.draining = false;
     this.levelSum = 0;
     this.levelPeak = 0;
     this.levelCount = 0;
+    this.statusSamples = 0;
     this.underruns = 0;
     this.dropped = 0;
     this.active = true;
@@ -20,6 +22,12 @@ class PcmPlaybackProcessor extends AudioWorkletProcessor {
       const data = event.data;
       if (data.type === "audio") this.write(data.buffer);
       if (data.type === "flush") this.reset();
+      if (data.type === "drain") {
+        // Конец сессии: доигрываем остаток, даже если он короче prebuffer.
+        this.draining = true;
+        if (this.count > 0) this.started = true;
+        else this.port.postMessage({ type: "drained" });
+      }
       if (data.type === "stop") this.active = false;
     };
   }
@@ -29,6 +37,7 @@ class PcmPlaybackProcessor extends AudioWorkletProcessor {
     this.writeIndex = 0;
     this.count = 0;
     this.started = false;
+    this.draining = false;
     this.underruns = 0;
     this.dropped = 0;
   }
@@ -58,6 +67,20 @@ class PcmPlaybackProcessor extends AudioWorkletProcessor {
     this.count += required;
   }
 
+  postStatus() {
+    this.port.postMessage({
+      type: "playback_status",
+      rms: this.levelCount > 0 ? Math.sqrt(this.levelSum / this.levelCount) : 0,
+      peak: this.levelPeak,
+      bufferedMs: Math.round((this.count / this.sampleRate) * 1000),
+      underruns: this.underruns,
+      dropped: this.dropped,
+    });
+    this.levelCount = 0;
+    this.levelSum = 0;
+    this.levelPeak = 0;
+  }
+
   process(_inputs, outputs) {
     if (!this.active) return false;
     const output = outputs[0] && outputs[0][0];
@@ -80,21 +103,20 @@ class PcmPlaybackProcessor extends AudioWorkletProcessor {
       if (this.count === 0) {
         this.started = false;
         this.underruns += 1;
+        if (this.draining) {
+          this.draining = false;
+          this.postStatus();
+          this.port.postMessage({ type: "drained" });
+        }
       }
     }
 
-    if (this.levelCount >= this.sampleRate / 10 || (this.count === 0 && this.levelCount > 0)) {
-      this.port.postMessage({
-        type: "playback_status",
-        rms: Math.sqrt(this.levelSum / this.levelCount),
-        peak: this.levelPeak,
-        bufferedMs: Math.round((this.count / this.sampleRate) * 1000),
-        underruns: this.underruns,
-        dropped: this.dropped,
-      });
-      this.levelCount = 0;
-      this.levelSum = 0;
-      this.levelPeak = 0;
+    // Статус уходит регулярно по времени рендера, а не только при nonzero RMS:
+    // иначе UI не узнает о застрявшем буфере и об окончании доигрывания.
+    this.statusSamples += output.length;
+    if (this.statusSamples >= this.sampleRate / 10) {
+      this.statusSamples = 0;
+      this.postStatus();
     }
     return true;
   }
