@@ -579,6 +579,7 @@ function sessionConfig() {
 }
 
 function openSocket() {
+  runtime.state = "connecting";
   const protocol = location.protocol === "https:" ? "wss" : "ws";
   runtime.intentionalClose = false;
   runtime.socket = new WebSocket(`${protocol}://${location.host}/ws/translate`);
