@@ -113,9 +113,9 @@ def normalize_event(event: dict[str, Any]) -> dict[str, Any]:
     elif event_type == "response.created":
         payload["status"] = "translating"
          response = event.get("response")
-          if not isinstance(response, dict):
-              response = {}
-          payload["response_id"] = event.get("response_id") or response.get("id", "")
+        if not isinstance(response, dict):
+            response = {}
+        payload["response_id"] = event.get("response_id") or response.get("id", "")
       elif event_type in {
         "conversation.item.input_audio_transcription.delta",
         "conversation.item.input_audio_transcription.text",
