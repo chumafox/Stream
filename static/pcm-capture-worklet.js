@@ -52,7 +52,7 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
     }
     this.levelCount += input.length;
 
-    while (this.position < input.length {
+    while (this.position < input.length) {
       const index = Math.floor(this.position);
       const fraction = this.position - index;
       const current = index < 0 ? this.prevSample : input[index];
