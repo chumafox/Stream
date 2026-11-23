@@ -27,6 +27,9 @@ class Settings:
     ws_url_override: str = ""
     key_source: str = "none"
 
+    def __post_init__(self) -> None:
+        if self.ws_url_override:
+            _ = self.ws_url
     @classmethod
     def from_env(cls) -> "Settings":
         api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
